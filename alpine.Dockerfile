@@ -38,6 +38,8 @@ RUN make install DESTDIR=/node-install \
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 ARG NODE_VERSION
 ENV NODE_VERSION=${NODE_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/ergonlabs/node-caged" \
+      org.opencontainers.image.description="Node.js ${NODE_VERSION} built with V8 pointer compression, on Alpine"
 RUN apk add --no-cache libgcc libstdc++ \
  && addgroup -g 1000 node \
  && adduser -u 1000 -G node -s /bin/sh -D node

@@ -194,7 +194,10 @@ jobs:
             echo "expected an amd64 and an arm64 digest, found ${#images[@]}" >&2
             exit 1
           fi
-          docker buildx imagetools create -t "${tag}" "${images[@]}"
+          docker buildx imagetools create -t "${tag}" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --annotation "index:org.opencontainers.image.description=Node.js ${version} built with V8 pointer compression (${VARIANT})" \
+            "${images[@]}"
           digest="$(docker buildx imagetools inspect "${tag}" --format '{{json .Manifest}}' | jq -r .digest)"
           {
             echo "### ${tag}"

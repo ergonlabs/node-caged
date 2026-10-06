@@ -42,6 +42,8 @@ RUN make install DESTDIR=/node-install \
 FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 ARG NODE_VERSION
 ENV NODE_VERSION=${NODE_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/ergonlabs/node-caged" \
+      org.opencontainers.image.description="Node.js ${NODE_VERSION} built with V8 pointer compression, on Debian trixie-slim"
 RUN groupadd --gid 1000 node \
  && useradd --uid 1000 --gid node --shell /bin/bash --create-home node
 COPY --from=build /node-install/usr/local /usr/local
