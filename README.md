@@ -36,7 +36,7 @@ Pointer compression has two costs. Both come from Node.js's own description of t
 - **Toolchain:** the official `rust` images (Temporal support needs a Rust compiler), not an installer piped from curl.
 - **Base images:** every `FROM` is pinned by digest.
 - **Self-check:** the final stage refuses to build unless `node` reports the pinned version, pointer compression and Temporal, and `npm` runs.
-- **Publication:** each architecture is built natively, not under emulation, and every image carries SLSA provenance and an SBOM.
+- **Publication:** [`.github/workflows/build.yml`](.github/workflows/build.yml) builds each architecture natively, not under emulation, on GitHub-hosted runners, and attaches SLSA provenance and an SBOM. A pull request builds the images once; merging it publishes those same images, after checking that the pull request's final commit has exactly the Dockerfiles and workflow on `main`.
 
 ## Files
 
@@ -45,6 +45,7 @@ Pointer compression has two costs. Both come from Node.js's own description of t
 | `alpine.Dockerfile` | `node-caged:<version>-alpine` |
 | `slim.Dockerfile` | `node-caged:<version>-slim` |
 | `verify-node-release.sh` | Verifies a Node.js release and pins it in both Dockerfiles |
+| `.github/workflows/build.yml` | Builds both images for amd64 and arm64 and publishes them |
 
 To build one yourself:
 
@@ -60,4 +61,8 @@ Compiling Node.js takes a long time: about an hour on 8 CPUs, and three to four 
 ./verify-node-release.sh 26.11.0
 ```
 
-It needs `curl` and `gpg`, verifies the release, and rewrites `NODE_VERSION` and `NODE_SHA256` in both Dockerfiles. It changes nothing if the signature does not verify.
+It needs `curl` and `gpg`, verifies the release, and rewrites `NODE_VERSION` and `NODE_SHA256` in both Dockerfiles. It changes nothing if the signature does not verify. Open a pull request with the result: it builds the new images, and merging it publishes them.
+
+## License
+
+MIT, for the files in this repository. The images contain Node.js, which is distributed under [its own license](https://github.com/nodejs/node/blob/main/LICENSE).

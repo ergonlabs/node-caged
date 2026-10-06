@@ -1,0 +1,203 @@
+name: node-caged image
+
+# Builds ghcr.io/ergonlabs/node-caged:<node version>-alpine and -slim: Node.js compiled from its
+# signed release tarball with V8 pointer compression. Each variant is built natively for
+# linux/amd64 and linux/arm64 on its own runner, then joined into one multi-arch tag. Runs when a
+# Dockerfile changes, or on demand.
+#
+# A set of builds takes hours, so each change is built once. A pull request from this repository
+# builds and pushes the images by digest (no tag) and keeps the digests as a run artifact. On
+# main, the release reuses that run's images when the merged pull request's final commit has
+# exactly the files on main that define them (the Dockerfiles and this workflow), so the run
+# executed the reviewed code; the release tags are then joined from those digests, never from a
+# tag a pull request could have written. Otherwise (a manual run, a direct push, a pull request
+# from a fork, files changed since), main builds the images itself. Pull requests from forks
+# build without pushing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.Dockerfile'
+  pull_request:
+    paths:
+      - '*.Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/ergonlabs/node-caged
+  DEFINING_PATHS: alpine.Dockerfile slim.Dockerfile .github/workflows/build.yml
+  # Fork pull requests get a read-only token, so only this repository's pull requests push.
+  PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+jobs:
+  find-reviewed-build:
+    name: Find the reviewed pull request build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      run-id: ${{ steps.find.outputs.run-id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Find a successful build of exactly this code
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          read -r pr head < <(gh api "repos/${REPO}/commits/${SHA}/pulls" --jq '.[0] // empty | "\(.number) \(.head.sha)"' || true) || true
+          if [ -z "${pr:-}" ]; then
+            echo "No pull request produced ${SHA}; building on main."
+            exit 0
+          fi
+          run_id="$(gh api "repos/${REPO}/actions/workflows/build.yml/runs?event=pull_request&head_sha=${head}&status=success" --jq '.workflow_runs[0].id // empty')"
+          if [ -z "${run_id}" ]; then
+            echo "Pull request #${pr} has no successful build of its final commit ${head}; building on main."
+            exit 0
+          fi
+          git fetch --quiet origin "refs/pull/${pr}/head"
+          read -ra defining_paths <<< "${DEFINING_PATHS}"
+          if ! git diff --quiet "${head}" "${SHA}" -- "${defining_paths[@]}"; then
+            echo "Pull request #${pr}'s final commit ${head} differs from main in ${DEFINING_PATHS}; building on main."
+            exit 0
+          fi
+          echo "Reusing the images built by run ${run_id} for pull request #${pr} at ${head}."
+          echo "run-id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.variant }} (${{ matrix.arch }})
+    needs: find-reviewed-build
+    if: always() && (github.event_name != 'push' || needs.find-reviewed-build.outputs.run-id == '')
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [alpine, slim]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build${{ env.PUSH == 'true' && ' and push by digest' || '' }}
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.variant }}.Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
+
+      - name: Record digest
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: env.PUSH == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.variant }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          # Long enough for a reviewed pull request to wait before merging; main reuses these.
+          retention-days: 90
+
+  publish:
+    name: Publish ${{ matrix.variant }}
+    needs: [find-reviewed-build, build]
+    if: >-
+      always() && github.event_name != 'pull_request'
+      && (needs.build.result == 'success'
+          || (needs.build.result == 'skipped' && needs.find-reviewed-build.outputs.run-id != ''))
+    strategy:
+      matrix:
+        variant: [alpine, slim]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.variant }}-*
+          merge-multiple: true
+          run-id: ${{ needs.find-reviewed-build.outputs.run-id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Join the amd64 and arm64 images under one tag
+        env:
+          VARIANT: ${{ matrix.variant }}
+          SOURCE_RUN: ${{ needs.find-reviewed-build.outputs.run-id || github.run_id }}
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          version="$(sed -n 's/^ARG NODE_VERSION=//p' "${GITHUB_WORKSPACE}/${VARIANT}.Dockerfile")"
+          tag="${IMAGE}:${version}-${VARIANT}"
+          images=()
+          for digest_file in *; do images+=("${IMAGE}@sha256:${digest_file}"); done
+          if [ "${#images[@]}" -ne 2 ]; then
+            echo "expected an amd64 and an arm64 digest, found ${#images[@]}" >&2
+            exit 1
+          fi
+          docker buildx imagetools create -t "${tag}" "${images[@]}"
+          digest="$(docker buildx imagetools inspect "${tag}" --format '{{json .Manifest}}' | jq -r .digest)"
+          {
+            echo "### ${tag}"
+            echo
+            echo "Built by run ${SOURCE_RUN}. Pin it as \`${tag}@${digest}\`."
+          } >> "${GITHUB_STEP_SUMMARY}"
