@@ -7,8 +7,8 @@
 # NODE_VERSION and NODE_SHA256 change together, and only through verify-node-release.sh, which
 # checks the release's SHASUMS256.txt signature against the nodejs/release-keys keyring and
 # prints the tarball's SHA-256. Every base image is pinned by digest.
-ARG NODE_VERSION=26.10.0
-ARG NODE_SHA256=7b3a546d33cb7e15a43bdd7a57e0be5d5fd5ffc553e6e4c120033e66f0ba20c5
+ARG NODE_VERSION=26.12.1
+ARG NODE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 
 # ── build: compile Node.js with pointer compression and Temporal ─────────────────────────────
 # The official Rust image provides the Rust toolchain Temporal support needs (rustc and
