@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Node.js releases are tracked through the ARG NODE_VERSION line of each *.Dockerfile. Merging such a PR rebuilds and publishes the node-caged image, which sugarmaple-app's Renovate then picks up.",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Node version pinned in the Dockerfiles",
+      "managerFilePatterns": ["/(^|/)[^/]*\\.Dockerfile$/"],
+      "matchStrings": ["^ARG NODE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"],
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": ["node-version"],
+      "matchDepNames": ["node"],
+      "groupName": "node",
+      "separateMajorMinor": true,
+      "separateMultipleMajor": true
+    }
+  ]
+}

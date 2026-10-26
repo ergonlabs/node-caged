@@ -2,7 +2,7 @@
 
 Node.js container images built with V8 **pointer compression**, published as `ghcr.io/ergonlabs/node-caged`.
 
-Pointer compression stores V8 heap references as 32-bit offsets instead of 64-bit pointers, which shrinks the JavaScript heap. On a test that allocates two million small objects, `node-caged:26.10.0-alpine` used 128 MB of heap where the official `node:26.10.0-alpine` used 224 MB.
+Pointer compression stores V8 heap references as 32-bit offsets instead of 64-bit pointers, which shrinks the JavaScript heap. On a test that allocates two million small objects, measured on Node 26.10.0, `node-caged:26.10.0-alpine` used 128 MB of heap where the official `node:26.10.0-alpine` used 224 MB.
 
 The images are drop-in replacements for the official Docker Hub `node` images of the same version: the same Alpine or Debian release, Node.js installed under `/usr/local`, the same `node` user at uid/gid 1000, and npm included. Temporal support is built in, as in the official Node.js 26 images.
 
@@ -10,16 +10,16 @@ The images are drop-in replacements for the official Docker Hub `node` images of
 
 | Tag | Replaces | Base |
 |---|---|---|
-| `ghcr.io/ergonlabs/node-caged:26.10.0-alpine` | `node:26.10.0-alpine` | Alpine 3.24 (musl) |
-| `ghcr.io/ergonlabs/node-caged:26.10.0-slim` | `node:26.10.0-slim` | Debian trixie-slim (glibc) |
+| `ghcr.io/ergonlabs/node-caged:26.12.1-alpine` | `node:26.12.1-alpine` | Alpine 3.24 (musl) |
+| `ghcr.io/ergonlabs/node-caged:26.12.1-slim` | `node:26.12.1-slim` | Debian trixie-slim (glibc) |
 
 Both are published for `linux/amd64` and `linux/arm64`.
 
 ```dockerfile
-FROM ghcr.io/ergonlabs/node-caged:26.10.0-alpine
+FROM ghcr.io/ergonlabs/node-caged:26.12.1-alpine
 ```
 
-Pin the digest (`…:26.10.0-alpine@sha256:…`) for builds that must not change under you.
+Pin the digest (`…:26.12.1-alpine@sha256:…`) for builds that must not change under you.
 
 ## Before you switch
 
@@ -50,7 +50,7 @@ Pointer compression has two costs. Both come from Node.js's own description of t
 To build one yourself:
 
 ```bash
-docker build -f alpine.Dockerfile -t node-caged:26.10.0-alpine .
+docker build -f alpine.Dockerfile -t node-caged:26.12.1-alpine .
 ```
 
 Compiling Node.js takes a long time: about an hour on 8 CPUs, and three to four and a half hours on a 2-CPU CI runner.
@@ -58,7 +58,7 @@ Compiling Node.js takes a long time: about an hour on 8 CPUs, and three to four 
 ## Updating Node.js
 
 ```bash
-./verify-node-release.sh 26.11.0
+./verify-node-release.sh 26.12.1
 ```
 
 It needs `curl` and `gpg`, verifies the release, and rewrites `NODE_VERSION` and `NODE_SHA256` in both Dockerfiles. It changes nothing if the signature does not verify. Open a pull request with the result: it builds the new images, and merging it publishes them.
